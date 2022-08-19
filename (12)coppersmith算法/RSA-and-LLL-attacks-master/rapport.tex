@@ -1,0 +1,955 @@
+\documentclass[a4paper,11pt]{article}
+
+% fonts
+\usepackage[utf8]{inputenc}
+\usepackage[francais]{babel}
+
+% asm
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsthm}
+
+% for right cases
+\newenvironment{rcases}
+  {\left.\begin{aligned}}
+  {\end{aligned}\right\rbrace}
+
+% diagrams
+\usepackage{tikz}
+\usetikzlibrary{matrix}
+\usetikzlibrary{positioning}
+
+% tables
+\usepackage{booktabs}
+
+% no identation
+\setlength{\parindent}{0pt}
+
+% theorem
+\newtheorem{definition}{Definition}
+\newtheorem{property}{Property}
+\newtheorem{theorem}{Theorem}
+
+% header
+\title{Survey: Lattice Reduction Attacks on RSA}
+\author{David Wong\\
+\small{supervised by Guilhem Castagnos}}
+\date{\emph{University of Bordeaux}, March 2015}
+
+% 
+\begin{document}
+
+\maketitle
+
+\renewcommand{\abstractname}{Abstract}
+\begin{abstract}
+\textbf{RSA}, carrying the names of \textbf{Ron Rivest}, \textbf{Adi Shamir} and \textbf{Leonard Adleman}, is one of the first practicable \textbf{public-key} cryptosystem. The algorithm was publicly described for the first time in \textbf{1977} and has since been the most used cryptosystem when it comes to asymmetric problems. For now more than \textbf{30 years}, Cryptanalysts and Researchers have looked for ways to \textbf{attack RSA}.\\
+One branch of cryptanalysis on RSA is to take an interest in a \textbf{relaxed model} of RSA. A model where we know part of the message, or we know an approximation of the primes, or the private exponent is too small... In these sorts of problems, \textbf{lattice reduction techniques} have proved to be very relevant. \textbf{Coppersmith} opened the way with his constructive theorem on how to find small roots of \textbf{univariate} polynomials using reductions of lattices. \textbf{Boneh} and \textbf{Durfee} followed with a method on how to find small roots of \textbf{bivariate} polynomials using Coppersmith's heuristics on multivariate polynomials. In this survey we will see how each algorithm work and how they were respectively made simpler by \textbf{Howgrave-Graham} and the duo \textbf{Herrmann} and \textbf{May}.\\
+\\
+\textbf{Keywords:} RSA, lattice, LLL, Coppersmith, Howgrave-Graham, Boneh-Durfee, Herrmann-May.\\
+
+\end{abstract}
+
+\section{Introduction}\label{introduction}
+
+In 1995, \textbf{Coppersmith} released a paper on how to attack RSA using \textbf{Lattices} and \textbf{Lattice reduction techniques} such as \textbf{LLL}. A few years later, \textbf{Howgrave-Graham} revisited Coppersmith's algorithm and made it easier to understand and apply. His work was implemented for various problems from revealing part of a message if most of the message was known, to breaking RSA if a good enough approximation of one of the prime was known.\\
+Attacks based on Lattice reduction techniques caught up and several researches were done on the subject. In 1990, \textbf{Wiener} had found that you could successfully break RSA if the private exponent was too small ($d<N^{1/4}$). In 2000, \textbf{Boneh} and \textbf{Durfee} improved that bound ($d<N^{0.292}$) using lattices and LLL in a Coppersmith-like attack. Their work was later simplified by \textbf{Herrmann} and \textbf{May}.\\
+In the 2nd and 3rd sections of this survey I will briefly explain how RSA and Lattice work. In section 4 we will see in what \textbf{model} the attacks are taking place and see \textbf{Håstad's Broadcast Attack} as an introduction to Coppersmith. Section 5 will be an overview of the Coppersmith algorithm revisited by Howgrave-Graham. Section 6 will be an overview of the Boneh and Durfee algorithm revisited by Herrmann and May. Finally the \textbf{implementations} of both attack will be added as an appendix.
+
+\section{RSA}\label{rsa}
+
+Let's quickly recall \textbf{what is} and \textbf{how} RSA works:\\
+RSA is an \textbf{asymmetric cryptosystem}. A generator algorithm derives two kinds of keys: a \textbf{public key} and a \textbf{private key}, both can be used either to encrypt or decrypt thanks to the asymmetric property of RSA to allow us to use the system as an \textbf{encryption} system or as a \textbf{signature} system.\\
+
+\subsection{Generation}
+
+To use RSA for \textbf{encryption} we need a public key to encrypt and a private key to decrypt. We first generate the \textbf{public key} as follow:\\
+
+We generate \textbf{two primes} $p$ and $q$. For security issues they should be around the \textbf{same size}. Those primes are the \textbf{core elements} of RSA. Knowing one of those allows us to compute the private key, thus allowing us to break the system. They can also be used to speed up calculations using the Chinese Remainder Theorem.\\
+Knowing $p$ and $q$ we can then compute the \textbf{modulus} $N = p \times q$ which will be part of the public key as well as the private key. And you will see why.\\
+
+Now comes the interesting part, we need to find a \textbf{public exponent} which will be used for \textbf{encryption}. For computational optimization, a \textbf{Fermat prime} ($2^{m} + 1$) is often used as public exponent (it makes things faster in \textbf{binary exponentiation}). In the case of a \textbf{signature scheme}, we would want the speed up to occur for the \textbf{private exponent} so we would use such a number as a private exponent and we would reverse the following steps.\\
+Anyway, any kind of exponent can theoretically be chosen, as long as it is coprime with $\varphi(N)$ (The \textbf{Euler's Totient function}).
+
+\[e \leftarrow \mathbb{Z}_{\varphi(N)}^{\ast}\]
+
+if $e$ is \textbf{coprime} with $\varphi(N)$ then it is part of the multiplicative group $(\mathbb{Z}/\varphi(N)\mathbb{Z})^{\ast}$ and thus \textbf{invertible} in $\mathbb{Z}/\varphi(N)\mathbb{Z}$.\\
+
+Now it is pretty easy to find the private exponent $d$ by inverting our public exponent $e$.\\
+
+All of this is possible because we can easily compute $\varphi(N)$:
+
+\[\varphi(N) = (p - 1) \times (q - 1)\]
+
+And here resides the \textbf{security} of RSA. Imagine for a moment that we could easily factor $N$ into $p$ and $q$, then we would be able to invert the public exponent $e$. That's why we say that \textbf{the security of RSA is reduced to the Factorization Problem}.\\
+
+Now let the \textbf{private key} be $\textbf{(N, d)}$ with the addition of $(p, q)$ if we need to speed up calculations.
+And let the \textbf{public key} be $\textbf{(N, e)}$.
+
+\subsection{Encryption/Decryption}
+
+To \textbf{encrypt} a message $m$, with $m < N$ we just do:
+\[ c = m^e \pmod{N} \]
+
+And to \textbf{decrypt}:
+\[ m = c^d \pmod{N} \]\\
+
+
+This works because the decryption step gives us:
+\[ c^d = (m^e)^d \pmod{N} \]
+
+And $e$ being $d$'s inverse tells us that:
+
+\begin{align*}
+	&e = d^{-1} \pmod{\varphi(N)} \\
+	\implies& ed = 1 \pmod{\varphi(N)} \\
+	\implies& ed = \varphi(N) + 1
+\end{align*}
+
+Coupled with \textbf{Euler's Theorem} stating that if $a$ and $n$ are coprime then:
+\[ a^{\varphi(n)} = 1 \pmod{n} \]
+
+Tells us that $m^{ed} = m \pmod{N}$
+
+\section{Lattice}\label{lattice}
+
+\subsection{Introduction}
+The attacks we will describe later both make use of the \textbf{Lenstra–Lenstra–Lovász lattice basis reduction algorithm}. Hence it is necessary for us to understand what is a lattice and why is this \textbf{LLL} algorithm so useful.\\
+Think about Lattices like \textbf{Vector Spaces}. Imagine a simple vector space of two vectors. You can add them together, multiply them by scalars (let's say numbers of $\mathbb{R}$) and it spans a vector space.
+
+\begin{tikzpicture}[scale=.55]
+\draw [lightgray] [<->] (0,5) -- (10,5);
+\draw [lightgray] [<->] (5,10) -- (5,0);
+\draw [thick,purple] [->] (5,5) -- (6, 8);
+\draw [thick,purple] [->] (5,5) -- (6, 6);
+
+\draw [thick,black] [->] (11,5) -- (12,5);
+
+\draw [lightgray] [<->] (13,5) -- (23,5);
+\draw [lightgray] [<->] (18,10) -- (18,0);
+%\path [fill=purple] (18,5) to (20.5,10) to (23,10) to (18,5);
+\path [fill=purple] (15.5,0) to (20.5,10) to (23,10) to (13,0);
+\end{tikzpicture}\\
+
+Now imagine that our vector space's \textbf{scalars are the integers}, taken in $\mathbb{Z}$. The space spanned by the vectors is now made out of points. It's \textbf{discrete}. Meaning that for any point of this lattice there is a ball centered around that point of radius different from zero that contains only that point. Nothing else.
+
+\begin{figure}[!h]
+\centering
+\begin{tikzpicture}[scale=.5]
+\draw [lightgray] [<->] (0,5) -- (10,5);
+\draw [lightgray] [<->] (5,10) -- (5,0);
+
+\draw [fill,purple] (9,1) circle [radius=0.1];
+
+\draw [fill,purple] (7,1) circle [radius=0.1];
+\draw [fill,purple] (8,2) circle [radius=0.1];
+\draw [fill,purple] (9,3) circle [radius=0.1];
+
+\draw [fill,purple] (5,1) circle [radius=0.1];
+\draw [fill,purple] (6,2) circle [radius=0.1];
+\draw [fill,purple] (7,3) circle [radius=0.1];
+\draw [fill,purple] (8,4) circle [radius=0.1];
+\draw [fill,purple] (9,5) circle [radius=0.1];
+
+\draw [fill,purple] (3,1) circle [radius=0.1];
+\draw [fill,purple] (4,2) circle [radius=0.1];
+\draw [fill,purple] (5,3) circle [radius=0.1];
+\draw [fill,purple] (6,4) circle [radius=0.1];
+\draw [fill,purple] (7,5) circle [radius=0.1];
+\draw [fill,purple] (8,6) circle [radius=0.1];
+\draw [fill,purple] (9,7) circle [radius=0.1];
+
+\draw [fill,purple] (1,1) circle [radius=0.1];
+\draw [fill,purple] (2,2) circle [radius=0.1];
+\draw [fill,purple] (3,3) circle [radius=0.1];
+\draw [fill,purple] (4,4) circle [radius=0.1];
+\draw [fill,purple] (5,5) circle [radius=0.1];
+\draw [fill,purple] (6,6) circle [radius=0.1];
+\draw [fill,purple] (7,7) circle [radius=0.1];
+\draw [fill,purple] (8,8) circle [radius=0.1];
+\draw [fill,purple] (9,9) circle [radius=0.1];
+
+\draw [fill,purple] (1,3) circle [radius=0.1];
+\draw [fill,purple] (2,4) circle [radius=0.1];
+\draw [fill,purple] (3,5) circle [radius=0.1];
+\draw [fill,purple] (4,6) circle [radius=0.1];
+\draw [fill,purple] (5,7) circle [radius=0.1];
+\draw [fill,purple] (6,8) circle [radius=0.1];
+\draw [fill,purple] (7,9) circle [radius=0.1];
+
+\draw [fill,purple] (1,5) circle [radius=0.1];
+\draw [fill,purple] (2,6) circle [radius=0.1];
+\draw [fill,purple] (3,7) circle [radius=0.1];
+\draw [fill,purple] (4,8) circle [radius=0.1];
+\draw [fill,purple] (5,9) circle [radius=0.1];
+
+\draw [fill,purple] (1,7) circle [radius=0.1];
+\draw [fill,purple] (2,8) circle [radius=0.1];
+\draw [fill,purple] (3,9) circle [radius=0.1];
+
+\draw [fill,purple] (1,9) circle [radius=0.1];
+\end{tikzpicture}
+\end{figure}
+
+Lattice are interesting in cryptography because we seldom deal with real numbers and they bring us a lot of tools to deal with integers.
+
+Just as vector spaces, lattices can also be described by different basis represented as \textbf{matrices}. Contrary to vector spaces, we generally represent the vectors of the basis as \textbf{rows} in their corresponding matrices.\\
+
+Last but not least, if $\{\tilde{b}_1\,\hdots,\tilde{b}_w\}$ are the vectors of the Gram-Schmidt basis of a lattice $L$ then we define the \textbf{determinant} of the lattice as such:
+
+\[ det(L) := \prod_{i=1}^{w} \|\tilde{b}_i\| \]
+
+You will see that in the technique we present, to easily compute the determinant of a lattice we will make the lattice \textbf{full rank} (dimension = rank) and \textbf{triangular}. So that the determinant is computable by doing the products of the \textbf{diagonal terms} of the lattice basis.
+
+\subsection{LLL}
+
+The \textbf{Lenstra–Lenstra–Lovász} \textit{lattice basis reduction algorithm} is a step by step calculus that reduces a lattice basis in polynomial time. The lattice is left unchanged but the row vectors of its new basis are ``\textbf{smaller}'' according to some definitions:
+
+\begin{definition}
+Let $L$ be a lattice with a basis $B$. The $\delta$-LLL algorithm applied on $L$'s basis $B$ produces a new basis of $L$: $B' = \{b_1,\hdots,b_n\}$ satisfying:
+\begin{eqnarray}
+\forall \hspace{1mm} 1 \leq j < i \leq n \text{ we have } |\mu_{i,j}| \leq \frac{_1}{^2}\\
+\forall \hspace{1mm} 1 \leq i < n \text{ we have } \delta \cdot \|\tilde{b_i}\|^2 \leq \| \mu_{i+1,i}\cdot \tilde{b}_i + \tilde{b}_{i + 1}\|^2
+\end{eqnarray}
+\begin{center}
+with $\mu_{i,j} = \frac{b_i \cdot \tilde{b}_j}{\tilde{b}_j \cdot \tilde{b}_j}$ and $\tilde{b}_1 = b_1$ (Gram-Schmidt)
+\end{center}
+\end{definition}
+
+\begin{tikzpicture}[scale=.55]
+\node [above] at (5,10) {\textbf{random basis}};
+\node [above] at (18,10) {\textbf{reduced basis}};
+\draw [lightgray] [<->] (0,5) -- (10,5);
+\draw [lightgray] [<->] (5,10) -- (5,0);
+
+\draw [fill,purple,opacity=.4] (9,1) circle [radius=0.1];
+
+\draw [fill,purple,opacity=.4] (7,1) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (8,2) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (9,3) circle [radius=0.1];
+
+\draw [fill,purple,opacity=.4] (5,1) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (6,2) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (7,3) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (8,4) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (9,5) circle [radius=0.1];
+
+\draw [fill,purple,opacity=.4] (3,1) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (4,2) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (5,3) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (6,4) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (7,5) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (8,6) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (9,7) circle [radius=0.1];
+
+\draw [fill,purple,opacity=.4] (1,1) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (2,2) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (3,3) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (4,4) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (5,5) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (6,6) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (7,7) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (8,8) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (9,9) circle [radius=0.1];
+
+\draw [fill,purple,opacity=.4] (1,3) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (2,4) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (3,5) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (4,6) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (5,7) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (6,8) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (7,9) circle [radius=0.1];
+
+\draw [fill,purple,opacity=.4] (1,5) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (2,6) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (3,7) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (4,8) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (5,9) circle [radius=0.1];
+
+\draw [fill,purple,opacity=.4] (1,7) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (2,8) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (3,9) circle [radius=0.1];
+
+\draw [fill,purple,opacity=.4] (1,9) circle [radius=0.1];
+
+%
+\draw [thick,black] [->] (11,5) -- (12,5);
+\node [above] at (11.5,5) {$_{LLL}$};
+%
+
+\draw [lightgray] [<->] (13,5) -- (23,5);
+\draw [lightgray] [<->] (18,10) -- (18,0);
+
+\draw [fill,purple,opacity=.4] (22,1) circle [radius=0.1];
+
+\draw [fill,purple,opacity=.4] (20,1) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (21,2) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (22,3) circle [radius=0.1];
+
+\draw [fill,purple,opacity=.4] (18,1) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (19,2) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (20,3) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (21,4) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (22,5) circle [radius=0.1];
+
+\draw [fill,purple,opacity=.4] (16,1) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (17,2) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (18,3) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (19,4) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (20,5) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (21,6) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (22,7) circle [radius=0.1];
+
+\draw [fill,purple,opacity=.4] (14,1) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (15,2) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (16,3) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (17,4) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (18,5) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (19,6) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (20,7) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (21,8) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (22,9) circle [radius=0.1];
+
+\draw [fill,purple,opacity=.4] (14,3) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (15,4) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (16,5) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (17,6) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (18,7) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (19,8) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (20,9) circle [radius=0.1];
+
+\draw [fill,purple,opacity=.4] (14,5) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (15,6) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (16,7) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (17,8) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (18,9) circle [radius=0.1];
+
+\draw [fill,purple,opacity=.4] (14,7) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (15,8) circle [radius=0.1];
+\draw [fill,purple,opacity=.4] (16,9) circle [radius=0.1];
+
+\draw [fill,purple,opacity=.4] (14,9) circle [radius=0.1];
+
+% vectors
+\draw [thick,purple] [->] (5,5) -- (7, 9);
+\draw [thick,purple] [->] (5,5) -- (6, 8);
+
+\draw [thick,purple] [->] (18,5) -- (19, 4);
+\draw [thick,purple] [->] (18,5) -- (19, 6);
+\end{tikzpicture}\\
+
+We will not dig into the internals of LLL here, see Chris Peikert's course\cite{chrispeikert} for detailed explanations of the algorithm.
+
+\subsection{Wanted properties of LLL}
+
+LLL yields an approximation of the \textbf{Shortest Vector Problem}. This is useful for us because if we consider the row vectors of a lattice's basis as \textbf{coefficient vectors of polynomials}. We can find a \textbf{linear combination} of those polynomials that has \textbf{``particularly small'' coefficients}. But let's not unveil too much too soon. Here is the relevant property of a LLL reduced basis that we will need later:
+
+\begin{property}
+Let $L$ be a lattice of dimension $n$. In polynomial time, the LLL algorithm outputs reduced basis vectors $v_i$, for $1 \leq i \leq n$, satisfying:
+
+\[ \|v_1\| \leq \|v_2\| \leq \hdots \leq \|v_i\| \leq 2^{\frac{n(n-1)}{4(n+1-i)}} \cdot det(L)^{\frac{1}{n+1-i}} \]
+\end{property}
+
+We can see that we can modify the bound on our vectors by modifying the dimension and the determinant of the lattice basis.
+
+\section{Relaxed models and small roots problem}\label{attacks}
+
+Attacks on RSA falls into two categories: the attacks on the \textbf{implementation} or the \textbf{mathematical attacks}. Over the years the mathematical cryptanalysis on RSA have proven to be hard and thus the cryptosystem is still considered as secure nowadays (march 2015). But what a researcher could find interesting is to attack a \textbf{relaxed} model of the RSA problem. What if we knew ``a part'' of the message, or what if we knew ``an approximation'' of one of the prime, or what if the private exponent was ``too small''...\\
+
+Let's imagine for an instant that Alice used RSA to encrypt the same message to 3 different people, all using the \textbf{same ``small'' public exponent} $e = 3$ as it's common to do. There is an attack, called \textbf{Håstad's Broadcast Attack}, that breaks this model.\\
+
+\begin{center}
+\begin{tikzpicture}[scale=2]
+\tikzstyle{every node}=[draw, shape=circle, ultra thick];
+\node (D) at (2,2) {Alice};
+\node (A) at (0,0) {David};
+\node (B) at (2,0) {Bob};
+\node (C) at (4,0) {Charles};
+
+\tikzstyle{every node}=[draw,shape=rectangle,solid,fill=white];
+\draw [->,dashed] (D) -- (A) node [above right=10mm] {$m^3 \pmod{N_1}$};
+\draw [->,dashed] (D) -- (B) node [above=15mm] {$m^3 \pmod{N_2}$};
+\draw [->,dashed] (D) -- (C) node [above left=10mm] {$m^3 \pmod{N_3}$};
+\end{tikzpicture}
+\end{center}
+
+\begin{align*}
+	c_1 &= m^3 \pmod{N_1}\\
+	c_2 &= m^3 \pmod{N_2}\\
+	c_3 &= m^3 \pmod{N_3}
+\end{align*}
+
+Here the trick is to use the \textbf{Chinese Remainder Theorem} to create an equation modulo $N_1 \times N_2 \times N_3$:
+\begin{align*}
+	m^3 = &c_1 \cdot N_2 N_3 \cdot [(N_2 N_3)^{-1} \pmod{N_1}] \\
+			 + &c_2 \cdot N_1 N_3 \cdot [(N_1 N_3)^{-1} \pmod{N_2}] \\
+			 + &c_3 \cdot N_1 N_2 \cdot [(N_1 N_2)^{-1} \pmod{N_3}] 
+			 \pmod{N_1 N_2 N_3}
+\end{align*}
+
+The method is similar to \textbf{Lagrange Interpolation}. For example let me quickly explain the first term, this $m^e$ has to be equal to $c_1$ only when modulo $N_1$, so we can multiply the term $c_1$ by $N_2$ and $N_3$ so that it cancels out when modulo $N_2$ or $N_3$. But when it is modulo $N_1$ we don't want those terms, so we multiply our term by their inverse modulo $N_1$ as well. Easy no? All the variables are known so calculating $m^e \pmod{N_1 N_2 N_3}$ is straight forward.
+
+Let's notice that since  $m < N_1, m < N_2, m < N_3$, we must have:
+
+\[ m \times m \times m = m^3 < N_1 \times N_2 \times N_3 \]
+
+So our $m^3$ modulo $N_1 N_2 N_3$ is actually just $m^3$ over $\mathbb{Z}$. 
+
+To recover the message we just have to compute the cubic root of that big value we just calculated.\\
+
+Generalizing it is pretty easy and let's formulate \textbf{Håstad}'s findings:
+
+\begin{theorem}
+If $c = m^e \pmod{N}$, then we can find $m$ in time polynomial if $|m| < N^{1/e}$.
+\end{theorem}
+
+That's the introduction to our ``small root'' problem. Now what about if $|m| > N^{1/e}$ but we know a part of the message $m_0$:
+
+\[ c = (m_0 + x)^e \pmod{N} \]
+
+Can we efficiently recover x? That's the question Coppersmith is answering.
+
+
+\section{Coppersmith}\label{coppersmith}
+
+This survey is no replacement for the original papers of Coppersmith\cite{coppersmith} and Howgrave-Graham\cite{howgrave-graham}. If you want to get a real understanding of those techniques I also advise you to read the survey from May\cite{may}.
+
+\subsection{Known modulus}\label{knownmodulus}
+
+That being said, let's dig into Coppersmith's use of LLL to crack RSA. We'll first see one of the problem it solves and build it from there.\\
+Imagine that you know a part of the message: this is called the \textbf{Stereotyped Messages Attack}. For example you know that Alice always sends her messages this way: ``the password is: cupcake''.
+
+Let's say we know $m_0$ of the message $m = m_0 + x_0$. And of course we don't know $x_0$. We have \textbf{our problem} translated to the following polynomial:
+
+\[ f(x) = (m_0 + x)^e - c \text{ with } f(x_0) = 0 \pmod{N} \]
+
+Well. \textbf{Coppersmith} says we can solve this in polynomial time if $x_0$ and $e$ are small enough:
+
+\begin{theorem}
+Let $N$ be an integer of unknown factorization, which has a divisor $b \geq N^{\beta}$, $0 < \beta \leq 1$. Let $f(x)$ be a univariate monic polynomial of degree $\delta$ and let $c \geq 1$.\\
+Then we can find in time $\mathcal{O}(c\delta^5log^9(N))$ all solutions $x_0$ of the equation
+
+\[ f(x) = 0 \pmod{b} \hspace{2mm} \text{ with } \hspace{2mm} |x_0| \leq c \cdot N^{\frac{\beta^2}{\delta}} \]
+\end{theorem}
+
+In our case that would mean that for $c=1$ and $\beta=1$ we could find a solution of our previous equation if $|x_0| \leq N^{\frac{1}{e}}$. And here we find something very similar to Håstad's Broadcast Attack.
+
+To find the roots of a polynomial \textbf{over a ring of integers modulo} $N$ is a very \textbf{difficult} task, whereas we possess efficient tools to find roots of  polynomials \textbf{over the integers} (Berlekamp–Zassenhaus, van Hoeij, Hensel lifting...). Hence Coppersmith's intuition to look for such a polynomial:
+
+\begin{tikzpicture}
+\node [above] at (2,1) {$f(x_0) = 0 \pmod{N}$ with $|x_0| < X$};
+\draw [<-,purple] (0,0) -- (0,1);
+\node [below] at (0.6,0) {$g(x_0) = 0$ over $\mathbb{Z}$};
+\end{tikzpicture}
+
+
+But how can we go from $f$ to $g$ here? The theorem of \textbf{Howgrave-Graham} gives us a clue:
+
+\begin{theorem}
+Let $g(x)$ be an univariate polynomial with $n$ monomials. Further, let $m$ be a positive integer. Suppose that
+\setcounter{equation}{0}
+\begin{align}
+&g(x_0) = 0 \pmod{N^m} \hspace{2mm} \text{ where } \hspace{2mm} |x_0| \leq X\\
+&\|g(xX)\| < \frac{_{N^m}}{^{\sqrt{n}}}
+\end{align}
+
+Then $g(x_0)=0$ holds over the integers.
+\end{theorem}
+
+What Howgrave-Graham is saying is that we need to \textbf{find a polynomial} that shares the same root as our function $f$ but modulo $N^m$ and it has to have \textbf{``small'' coefficients} so that its norm would be ``small'' as well.\\
+
+\begin{tikzpicture}
+\node [above] at (2,4) {$f(x_0) = 0 \pmod{N}$ with $|x_0| < X$};
+\draw [<-] (0,0) -- (0,4);
+\node [below] at (0.6,0) {$g(x_0) = 0$ over $\mathbb{Z}$};
+\draw [purple,<-] (0,1) -- (1,1);
+\node [right] at (1.2,1.35) {$g(x_0) = 0 \pmod{N^m}$};
+\node [right] at (1.2,.65) {$\|g(xX)\| < \frac{N^m}{\sqrt{n}}$};
+\draw [purple,<-] (3,2) -- (3,4);
+\end{tikzpicture}
+
+Howgrave-Graham's idea is that we need to find this polynomial $g$ by \textbf{combining} polynomials who also have $x_0$ as roots. The more polynomials we can play with, the better. We will see later that it is very easy for us to create polynomials $f_i$ such that $f_i(x_0) = 0 \pmod{N^m}$. And that is the reason why we choose to find a polynomial over $N^m$ and not over $N$.\\
+
+The \textbf{LLL reduction} has two properties that are useful to us:
+\begin{itemize}
+	\item{It only does \textbf{integer linear operations} on the basis vectors}
+	\item{The \textbf{shortest vector of the output basis is bound} (as seen in \textbf{Property 1})}\\
+\end{itemize}
+The first point allows us to combine them to build a function that still has $x_0$ as root modulo $N^m$:
+
+\[ g(x_0) = \sum^n_{i=1}a_i\cdot f_i(x_0) = 0 \pmod{N^m}\hspace{5mm} a_i \in \mathbb{Z} \]
+
+The second point allows us to get Howgrave-Graham's second point ($\|g(xX)\| < \frac{_{b^m}}{^{\sqrt{n}}}$).\\
+
+But first let's see how to \textbf{build the polynomials} $f_i$ (we will call them $g_{i,j}$ and $h_i$) we will build our $g(x_0) = 0$ with. Note that $\delta$ is the degree of $f$:
+
+\begin{align*}
+	g_{i,j}(x) &= x^j \cdot N^i \cdot f^{m-i}(x) \text{ for } i = 0,\hdots,m-1,\hspace{2mm} j=0,\hdots,\delta-1\\
+	h_i(x) &= x^i \cdot f^m(x) \text{ for } i = 0,\hdots,t-1
+\end{align*}
+
+Those polynomials achieve two things:
+\begin{itemize}
+	\item{they have the \textbf{same root} $x_0$ but modulo $N^m$}
+	\item{each iteration introduce a new monomial. That allows us to build a \textbf{triangular} lattice (so that the determinant is easier to calculate)}\\
+\end{itemize}
+
+If you don't understand how they have the same root $x_0$ remember that since $f(x_0) = 0 \pmod{N}$ we know that $f(x_0) = k \cdot N$\\
+
+Now we just have to create a lattice basis with $f_i(xX)$ as row vectors (because we want them to build a polynomial $g(xX)$ to test Howgrave-Graham second point).\\
+
+
+Let's take a look at the \textbf{overview} again:\\
+
+\begin{tikzpicture}
+% 1
+\node [above right] at (.5,10) {$f(x_0) = 0 \pmod{N}$ with $|x_0| < X$};
+\draw [<-] (1,0) -- (1,10);
+\node [below right] at (0.5,0) {$g(x_0) = 0$ over $\mathbb{Z}$};
+% 2
+\draw [<-] (1,1) -- (1.5,1);
+\node [right] at (1.7,1.35) {$g(x_0) = 0 \pmod{N^m}$};
+\node [right] at (1.7,.65) {$\|g(xX)\| < \frac{N^m}{\sqrt{n}}$};
+\draw [<-] (3.5,2) -- (3.5,10);
+% new 3
+\draw [purple,->] (6,10) -- (6,9.5);
+\node [below right] at (4,9.3) {generate $f_i$ s.t. $f_i(x_0) = 0 \pmod{N^m}$};
+
+\draw [purple,->] (6,8.6) -- (6,7.8);
+\node [below right] at (4,7.5) {$B = \begin{pmatrix}
+  f_i(xX) \\
+  \vdots  \\
+  f_n(xX)
+ \end{pmatrix}$};
+ 
+\draw [purple,->] (6,5.5) -- (6,4.4);
+\node [right] at (6.3,5) {LLL};
+
+\node [below right] at (4,4.1) {$B' = \begin{pmatrix}
+  b_1 = g(xX) \\
+  b_2\\
+  \vdots  \\
+  b_n
+ \end{pmatrix}$};
+ 
+\draw [<-,purple] (3.5,3) -- (4,3);
+\end{tikzpicture}\\
+
+Now the shortest vector of $B'$ (the LLL-reduced basis) should be the coefficient vector of $g(xX)$. \\
+
+As I said earlier, the LLL reduction allows us to achieve an \textbf{upper bound} on this shortest vector:
+
+\[ \|b_1\| \leq 2^{\frac{n-1}{4}} \cdot det(L)^{\frac{1}{n}} \]
+
+And recall \textbf{Howgrave-Graham Theorem}'s second point:
+
+\[ \|b1\| = \|g(xX)\| < \frac{_{N^m}}{^{\sqrt{n}}} \]
+
+Now, to obtain Howgrave-Graham's second point on our $g$ we have to manipulate $g_{i,j}(xX)$ and $h_i(xX)$ to obtain a small enough determinant. From the previous equations we \textbf{bound the determinant}:
+
+\[ det(L) < 2^{-\frac{n(n-1)}{4}} \cdot n^{-\frac{n}{2}} \cdot N^{n \cdot m} \]
+
+The small terms can be considered as ``error terms'' to \textbf{simplify our bound}:
+
+\[ det(L) < N^{m \cdot n}\]
+
+It is from these equations that Coppersmith bounded the value of $x$ in his theorem. Now if we want to use this algorithm we will have to \textbf{tweak} $m$ and $t$ until we obtain the correct bounds. Note that the bound on the shortest vector of the reduced lattice basis is generous. That means that even if we don't correctly bound our determinant, we might find an answer.
+
+\subsection{Any modulus}\label{anymodulus}
+
+Coppersmith method is actually more general: it also works for unknown modulus.\\
+We will see how the \textbf{Factoring with High Bits Known Attack} works to understand this part. Imagine the relaxed problem of RSA where we know an approximation $\tilde{p}$ of one of the prime $p$. The approximation is bounded as followed:
+
+\[ |\tilde{p} - p| < N^{\frac{1}{4}} \]
+
+Now we have an equation with one unknown, modulo another unknown:
+
+\[ \tilde{p} = x_0 \pmod{p} \]
+
+This gives us an equation $f(x) = \tilde{p} - x$ such that $f(x_0) = 0 \pmod{p}$. We can use that in the Coppersmith algorithm we have seen earlier. This is because Howgrave-Graham's theorem works for unknown modulus. Let's see this theorem again:
+
+\begin{theorem}
+Let $g(x)$ be an univariate polynomial with $n$ monomials. Further, let $m$ be a positive integer. Suppose that
+\setcounter{equation}{0}
+\begin{align}
+&g(x_0) = 0 \pmod{b^m} \hspace{2mm} \text{ where } \hspace{2mm} |x_0| \leq X\\
+&\|g(xX)\| < \frac{_{b^m}}{^{\sqrt{n}}}
+\end{align}
+
+Then $g(x_0)=0$ holds over the integers.
+\end{theorem}
+
+We know we can build the $f_i$ polynomials as we did before. And here instead of bounding $\|g(xX)\|$ with $p^m$ we can bound it with $N^{\beta m}$ (since we have $p > N^\beta$ in Coppersmith Theorem). This allows us to formulate problems with unknown modulus.
+
+And now obtain a bound on the determinant:
+
+\[ det(L) < N^{m \cdot n \cdot \beta} \]
+
+\subsection{How were the bounds calculated?}\label{bounds}
+
+Let's go back from the start. Here's our new \textbf{general equation} with this time an unknown modulus $b$:
+
+\[ f(x) = (m_0 + x)^e - c = 0 \pmod{b} \]
+
+we know $m_0$, $e$, $c$, $N$ and $\beta$. We don't know $b$, and $x$. Here are the relations we know:
+
+\[ \begin{cases} 
+	b \geq N^\beta \text{, } 0 < \beta \leq 1 \\
+	|x_0| < X
+	\end{cases} \]
+	
+What we want is to find the \textbf{biggest possible} $X$ for which it is possible to find the root $x_0$ of this polynomial $f$.
+So we have to find that upperbound $X$ such that there exists $m$ and $t$ to construct a lattice basis of dimensions $n = \delta m + t$ that will yield satisfactory results after a LLL reduction. This happens if we respect \textbf{Howgrave-Graham's  second point}, that we couple with our \textbf{LLL's property} to \textbf{bound the determinant}:
+
+\[
+	\begin{rcases}
+		\|g(xX)\| < \frac{b^m}{\sqrt{n}}\\
+		\|v_1\| \leq 2^{\frac{n-1}{4}}det(L)^{\frac{1}{n}}
+	\end{rcases}
+	\implies 2^{\frac{n-1}{4}}det(L)^{\frac{1}{n}} < \frac{b^m}{\sqrt{n}}
+\]
+
+Since we don't know $b$, as I explained earlier we use $N^\beta$ instead:
+
+\[ \implies 2^{\frac{n-1}{4}}det(L)^{\frac{1}{n}} < \frac{N^{\beta m}}{\sqrt{n}} \]
+
+And here's the \textbf{determinant}:
+
+\[ det(L) = N^{\frac{1}{2}\delta m (m+1)}X^{\frac{1}{2}n(n-1)} \]
+
+We can use both equations to bound $X$ as such:
+
+
+\setcounter{equation}{0}
+\begin{eqnarray}
+\implies X \leq \frac{1}{2} N^{\frac{2\beta m}{n-1} - \frac{\delta m ( m + 1)}{n(n-1)}}
+\end{eqnarray} 
+
+Earlier I said that we wanted the row vectors in our basis to be \textbf{helpful}. Meaning their highest monomial, the one appearing in the diagonal thus in the determinant, had to be less than $N^{\beta m}$. Bounding the last and highest monomial of the diagonal of the basis gives us:
+
+\begin{eqnarray}
+ X^{n-1} < N^{\beta m}
+\end{eqnarray}
+
+Coppersmith's \textbf{constructive proof} showed that using $X = \frac{1}{2} N^{\frac{\beta^2}{\delta}-\epsilon}$ we could satisfy these two previous inequalities for those values:
+
+\[ \begin{cases}
+	0 < \epsilon \leq \frac{1}{7} \beta\\
+	m = \left\lfloor \frac{\beta^2}{\delta \epsilon}\right\rfloor\\
+	t = \left\lfloor \delta m (\frac{1}{\beta}-1)\right\rfloor\\
+\end{cases} \]
+
+\subsection{Experiments}\label{coppersmith-experiments}
+
+I used Sage 6.4 in a Virtualbox with 512Mo of RAM and 1 core from an Intel i7 @ 2.30GHz.
+
+Here are the experiments for the \textbf{Stereotyped Message Attack}:
+
+\begin{center} 
+\begin{tabular}{@{} *6c @{}}
+\toprule
+ size of $x_0$ & size of $N$ & $e$ & m & t & running time \\ 
+\midrule
+ 100 & 512 & 3 & 3 & 0 & 0.02s\\ 
+ 200 & 1024 & 3 & 3 & 0 & 0.05s\\
+\bottomrule
+\end{tabular}
+\end{center} 
+
+Here are the experiments for the \textbf{Factoring with High Bits Known Attack}:
+
+\begin{center} 
+\begin{tabular}{@{}  *6c @{}}
+\toprule
+ size of $|p - \tilde{p}|$ & size of $N$ & $m$ & $t$ & running time \\ 
+\midrule
+ 110 & 512 & 4 & 4 & 0.01s\\ 
+ 200 & 1024 & 4 & 4 & 0.03s\\
+\bottomrule
+\end{tabular}
+\end{center} 
+
+\section{Boneh-Durfee}\label{bonehdurfee}
+
+\subsection{Overview of the method}\label{overview}
+This survey is no replacement for the original papers of Boneh and Durfee\cite{bonehdurfee} and Herrmann and May\cite{herrmannmay}.
+
+We've seen how Coppersmith found a way of using lattices and the LLL algorithm to find small roots to particular univariate polynomials. What about problems that have two unknowns? Coppersmith gave an heuristic for finding roots of \textbf{bivariate polynomials} but left it at that. More recently, Boneh and Durfee have released papers on some RSA attacks that make use of the initial ideas of Coppersmith for finding small roots of bivariate polynomials.
+
+Let's introduce the problem:
+
+Boneh and Durfee are telling us we can, \textbf{most of the time} (they released a heuristic and not a theorem), successfully \textbf{factor} $\textbf{N}$ if the \textbf{private exponent $\textbf{d}$ is too small}. Precisely if $d < N^{0.292}$.\\
+
+Recall how RSA works:
+\begin{align*}
+&e \cdot d = 1 \pmod{\varphi(N)}\\
+\implies& e \cdot d = k \cdot \varphi(N) + 1\\
+\implies& k \cdot \varphi(N) + 1 = 0 \pmod{e}\\
+\implies& k \cdot (N + 1 - p - q) + 1 = 0 \pmod{e}
+\end{align*}
+Here the unknowns are $k$ and $(-p-q)$. We can write that problem as a polynomial with root $x_0$ and $y_0$:
+\[ f(x,y) = x \cdot (A + y) \text{ such that } f(x_0,y_0) = 0 \pmod{e} \]
+
+with $A = N + 1$ and $y = -p -q$.\\
+
+Now we use \textbf{Coppersmith's heuristic for multivariate polynomials}. Coupled with \textbf{Howgrave-Graham's Theorem} for bivariate polynomials:
+
+\begin{theorem}
+Let $g(x)$ be an bivariate polynomial with at most $n$ monomials. Further, let $m$ be a positive integer. Suppose that
+\setcounter{equation}{0}
+\begin{align}
+&g(x_0,y_0) = 0 \pmod{e^m} \hspace{2mm} \text{ where } \hspace{2mm} |x_0| \leq X \text{ and } |y_0| \leq Y\\
+&\|g(xX,yY)\| < \frac{_{e^m}}{^{\sqrt{n}}}
+\end{align}
+Then $g(x_0,y_0)=0$ holds over the integers.\\
+\end{theorem}
+
+But the problem here is that \textbf{one polynomial is not enough} to get the roots of a bivariate equation. What we need are \textbf{two polynomials}, then we could use the \textbf{resultant} or a Gröbner basis to find the roots.
+
+Coppersmith proposed to take \textbf{the two shortest vectors}, of the LLL-reduced basis, as polynomials. Let's take a look at what it should look from a distance:\\
+
+\begin{tikzpicture}
+% 1
+\node [above right] at (.5,10) {$f(x_0, y_0) = 0 \pmod{e}$ with $|x_0| < X$ and $|y_0| < Y$};
+\draw [<-] (1,0) -- (1,10);
+\node [below right] at (0.5,0) {$g_1(x_0,y_0) = 0$ over $\mathbb{Z}$};
+% new 1
+\node [below right] at (0.5,-.6) {$g_2(x_0,y_0) = 0$ over $\mathbb{Z}$};
+\draw [->] (1,-1.4) -- (1,-2.1);
+\node [below right] at (0.5,-2.1) {$r(x) = resultant_x(g_1, g_2)$};
+% 2
+\draw [<-] (1,1) -- (1.5,1);
+\node [right] at (1.7,1.35) {$g_1(x_0,y_0) = 0 \pmod{e^m}$ and $\|g_1(xX,yY)\| < \frac{e^m}{\sqrt{n}}$};
+\node [right] at (1.7,.65) {$g_2(x_0,y_0) = 0 \pmod{e^m}$ and $\|g_2(xX,yY)\| < \frac{e^m}{\sqrt{n}}$};
+\draw [<-] (3.5,2) -- (3.5,10);
+% new 3
+\draw [->] (6,10) -- (6,9.5);
+\node [below right] at (4,9.3) {generate $f_i$ s.t. $f_i(x_0,y_0) = 0 \pmod{e^m}$};
+
+\draw [->] (6,8.6) -- (6,7.8);
+\node [below right] at (4,7.5) {$B = \begin{pmatrix}
+  f_i(xX,yY) \\
+  \vdots  \\
+  f_n(xX,yY)
+ \end{pmatrix}$};
+ 
+\draw [->] (6,5.5) -- (6,4.4);
+\node [right] at (6.3,5) {LLL};
+
+\node [below right] at (4,4.1) {$B' = \begin{pmatrix}
+  b_1 = g_1(xX, yY) \\
+  b_2 = g_2(xX, yY)\\
+  \vdots  \\
+  b_n
+ \end{pmatrix}$};
+ 
+\draw [<-] (3.5,3) -- (4,3);
+\end{tikzpicture}\\
+
+And once we find the root $x_0$ of $r$ we can re-inject it in $g_1$ to find $y_0$.
+
+\textbf{This doesn't always yield a solution}. For example, if the two polynomials $g_1$ and $g_2$ are not independent, the resultant will be zero.\\
+
+\textbf{Boneh and Durfee} proposed a construction of the $f_i$ polynomials as follow:
+\begin{align*}
+	\text{for } k = 0,\hdots,m&:\\
+	g_{i,k}(x) &= x^i \cdot f^k(x,y) \cdot e^{m-k} \text{ for } i=0,\hdots,m-k\\
+	h_{j,k}(x) &= y^j \cdot f^k(x,y) \cdot e^{m-k} \text{ for } j = 0,\hdots,t
+\end{align*}
+
+They called the $g_{i,k}$ \textbf{x-shifts} and the $h_{j,k}$ \textbf{y-shifts}.\\
+
+By using these polynomials to build the lattice, carefully balancing the variables so that the determinant of the triangular basis doesn't exceed $e^{mn}$, Boneh and Durfee showed that LLL successfuly yielded useful results if $d < N^{0.284}$.\\
+
+To achieve their \textbf{improved results} of $d < N^{0.292}$, they showed that using a sublattice by \textbf{ignoring some of the y-shifts}, the bounds on the shortest vectors found by LLL were improved.\\
+This is because of the ``\textbf{helpful vectors}'' notion of Howgrave-Graham. A vector is helpful if his contribution to the determinant (its monomial that appears in the diagonal of the lattice basis) is less than $e^m$. Boneh and Durfee's method is to discard all y-shifts when their highest monomial exceeds $e^m$.
+
+\begin{tikzpicture}[thick,scale=0.9, every node/.style={transform shape}]
+\fill [purple!20!white] (-7,-.9) to (7,-.9) to (7, -1.9) to (-7,-1.9) to cycle;
+
+\node (matrix1) {$\bordermatrix{
+&1 &x &xy &x^2 &x^2y &x^2y^2 &y &xy^2 &x^2y^3\cr
+  e^2& e^2\cr
+  xe^2& &e^2X\cr
+  fe& e& eAX& eXY\cr
+  x^2e^2& & & & e^2X^2\cr
+  xfe& & eX& & eAX^2& eX^2Y\cr
+  f^2& 1& 2AX& 2XY& A^2X^2& 2AX^2Y& X^2Y^2\cr  
+  ye^2 & & & & & & & e^2Y&\cr
+  yfe& & & eAXY& & & & eY& eXY^2\cr
+  yf^2& & & 2AXY& & A^2X^2Y& 2AX^2Y^2& Y& 2XY^2& X^2Y^3}$};
+  
+\node (caption1) [below =.3cm of matrix1] {Boneh-Durfee basis matrix for $m=2$, $t=1$};
+
+\node (matrix2) [below =.5cm of caption1] {$\bordermatrix{
+&1 &x &xy &x^2 &x^2y &x^2y^2 &y &xy^2 &x^2y^3\cr
+  e^2& e^2\cr
+  xe^2& & e^2X\cr
+  fe& e& eAX& eXY\cr
+  x^2e^2& & & & e^2X^2\cr
+  xfe& & eX& & eAX^2& eX^2Y\cr
+  f^2& 1& 2AX& 2XY& A^2X^2& 2AX^2Y& X^2Y^2\cr 
+  yf^2& & & 2AXY& & A^2X^2Y& 2AX^2Y^2& Y& 2XY^2& X^2Y^3}$};
+
+\node (caption2) [below =.3cm of matrix2] {After removing the damaging y-shifts' coefficient vectors};
+
+\end{tikzpicture}\\
+
+Unfortunately by doing this we \textbf{lose the triangular structure} of the basis and evaluating the determinant of the new rectangular basis is tricky.
+
+\textbf{Boneh and Durfee} developed the notion of \textbf{Geometrically progressive matrices} to handle these non-triangular lattice basis. Later \textbf{Blömer and May} took a different approach by noticing that some of the columns could be removed without affecting the determinant too much, that allowed the lattice basis to return to a triangular structure. Both those methods are quite difficult to handle and it's more recently that \textbf{Herrmann and May} found a clever and better way:\\
+
+The \textbf{Unravelled Linearization} technique consists in \textbf{modifying} our initial polynomial $f$. Done cleverly this will modify the $f_i$ so that after removing the y-shifts, our sublattice basis will \textbf{directly be triangular}.
+
+Herrmann and May propose to do the following \textbf{substitution} on $f$:
+
+\[ f(x,y)=\underbrace{1 + xy}_u + Ax \pmod{e} \]
+
+This leaves us with the \textbf{linear polynomial} $\bar{f}(u, x) = u + Ax$ (note the lexicographic order, $u$ before $x$) and a relation $xy = u - 1$.
+
+The x-shifts are still constructed as usual:
+\[ \bar{g}_{i,k}(u,x) = x^i \cdot \bar{f}^k \cdot e^{m-k} \text{ for } k = 0,\hdots,m \text{ and } i=0,\hdots,m-k \]
+
+The y-shifts are constructed the same way, but we need to apply our relation again afterward to completely perform our unravelled linearization:
+\[ \bar{h}_{j,k}(u,x,y) = y^j \cdot \bar{f}^k \cdot e^{m-k} \text{ for } j = 1,\hdots,t \text{ and } k=\left\lfloor\frac{m}{t}\right\rfloor\cdot j,\hdots,m \]
+
+They are \textbf{selected} with the notion of ``\textbf{increasing pattern}'' in mind, so that using the previous relation $xy = u - 1$ we end up with a \textbf{triangular} lattice basis: 
+
+\begin{tikzpicture}[thick]
+\node [scale=1.2] (matrix3) {$\bordermatrix{
+&1 &x &u &x^2 &ux &u^2 &u^2y\cr
+  e^2& e^2\cr
+  xe^2& &e^2X\cr
+  \bar{f}e& & eAX& eU\cr
+  x^2e^2& & & & e^2X^2\cr
+  x\bar{f}e& & & & eAX^2& eUX\cr
+  \bar{f}^2& & & & A^2X^2& 2AUX& U^2\cr
+  y\bar{f}^2& & -A^2X& -2AU& & A^2UX& 2AU^2& U^2Y}$};
+
+\node [below =.3cm of matrix3] {The same matrix previously, after the unravelled linearization step};
+
+\end{tikzpicture}\\
+
+Now that we have built a lattice basis, we have to know how we need to \textbf{bound our two shortest vectors} so that Howgrave-Graham second point is respected. From LLL's property:
+
+\[ \|v_1\| \leq \|v_2\| \leq 2^{\frac{n}{4}} \cdot det(L)^{\frac{1}{n-1}} \]
+
+We need to bound $v_1$ and $v_2$ so that they respect Howgrave-Graham's theorem second point. This is the bound we end up with on the determinant:
+
+\[ det(L) < \frac{e^{m(n-1)}}{(n2^n)^{\frac{n-1}{2}}} \]
+
+That can be reduced by removing the ``error terms'':
+
+\[ det(L) < e^{mn} \]
+
+\subsection{How was the bound on $d$ calculated?}\label{bound-boneh-durfee}
+
+Let's go back to our first equation:
+
+\[ e \cdot d = k \cdot \varphi{N} + 1 = k \cdot (N + 1 - p - q) \]
+
+Let's recap what we know:
+
+\begin{itemize}
+	\item{$p$ and $q$ should be half the size of $N$:\\
+	\begin{align*}
+		 \frac{log(p)}{log(N)} \approx \frac{1}{2}\\
+		 \implies p,q \approx N^{\frac{1}{2}}
+	\end{align*}}
+	\item{$e \approx N$}
+	\item{$d < N^\delta$\\}
+\end{itemize}
+
+The first two are what we usually use in RSA. Our last one is the bound we are trying to define. Of course we want a $\delta$ as big as possible. Now that we have defined all these, let's go back to our previous equation and let's bound our unknowns:
+
+\[ k \cdot ( \underbrace{N + 1}_A + \underbrace{-p-q}_s) \pmod{e}  \hspace{2mm} \mbox{ with } \begin{cases} |s| \approx 2N^{\frac{1}{2}} \\
+ |k| < \frac{N^\delta - 1}{N - 1 + 2N^{\frac{1}{2}}}
+ \end{cases} \]
+ 
+$s$ should be pretty close to our prediction. But $k$? It could be way lower, this incertitude tells us we have the possibility to play with its bound.
+
+Let's note that $s >> k$ and that reducing the size of our unknown $s$ is a good idea. Notice that both $s$ and $A$ are even, that allows us to reformulate our problem with a smaller $s$:
+
+\[ f(x,y) = x \cdot ( A + y) \pmod{e}  \hspace{2mm} \mbox{ with } \begin{cases} x = 2k \\
+ y = (-p-q)/2\\
+ A = (N+1)/2
+ \end{cases} \]
+ 
+ We can now reformulate our bounds and remove the negligible terms:
+
+\[ \begin{cases} |y| \approx N^{\frac{1}{2}}\\
+|x| < 2N^\delta
+\end{cases}\]
+
+We do not need to bound them accurately as the LLL property on the shortest vector bound is a dramatic one.
+
+Now for our algorithm we need to fix a $m$ and a $t$ such that $dim(L) = n$. For Herrmann and May's selection of the y-shifts we need $m \geq t$ so we will write $t = \tau m$ with $\tau < 1$.
+
+Remember earlier we said that we need to bound our determinant to obtain \textbf{Howgrave-Graham's Theorem second point}, and \textbf{LLL's property} gave us this \textbf{bound}:
+
+\[ det(L) < e^{mn} \]
+
+$det(L)$ being a function of $e \approx N$, $\delta$, $m$ and $t$. The bound being a function of $e$, $m$ and $t$.
+
+from Herrmann and May's proof we end up with this formula as \textbf{determinant} (after removing negligible terms that were calculated for $m \rightarrow \infty$):
+
+\[ det(L) = X^{\frac{1}{6}m^3} Y^{\frac{\tau^2}{6}m^3} U^{(\frac{1}{6} + \frac{\tau}{3})m^3} e^{(\frac{1}{3} + \frac{\tau}{2})m^2} \]
+
+with this dimension of the lattice:
+
+\[ dim(L) = n = \left(\frac{1}{2} + \frac{\tau}{2}\right)m^2 \]
+
+We can now develop the previous bound, and we inject our $t = \tau m$:
+\[ X^{\frac{1+\tau}{3}m^3}Y^{\frac{(\tau +1)^2}{6}m^3} e^{(\frac{1}{3} + \frac{\tau}{6})m^3} < e^{(\frac{1}{2} + \frac{\tau}{2})m^2} \text{ for } m \rightarrow \infty \]
+
+We then inject $X = e^\delta$ and $Y = e^{\frac{1}{2}}$ (since we said $e \approx N$) in our equation:
+\[ (e^\delta)^{\frac{1+\tau}{3}m^3} 
+ (e^{\frac{1}{2}})^{\frac{(\tau+1)^2}{6} m^3}
+  e^{(\frac{\tau+2}{6})m^3} < e^{\frac{1+\tau}{2}m^2} \]
+
+Boneh and Durfee derived an optimized value of $\tau = (1 - 2\delta)$ that simplifies the inequality to:
+
+\[ -\frac{1}{3}\delta^2 + \frac{2}{3} \delta -\frac{1}{6} < 0 \]
+
+And thus can be derived the \textbf{Boneh-Durfee bound}:
+
+\[ \delta < \frac{1}{2} (2 - \sqrt{2}) \approx 0.292 \]
+
+\subsection{Experiments}\label{boneh-durfee-experiments}
+
+My experiments were far from Boneh and Durfee's. When they took hours to solve for small $m$ and $t$, I took seconds. This is mostly due to the gap of computation power and LLL's implementation between 1999 and now (2015): I used Sage 6.4 in a Virtualbox with 512Mo of RAM and 1 core from an Intel i7 @ 2.30GHz. I found out that in practice, the bound of $X$ was often way higher than the root $x_0$, decreasing $X$ until the algorithm worked was a good way to find the roots.\\
+I also found out that increasing $m$ (and $t$) would increase the running time of LLL way too much, thus our equation calculated for $m \rightarrow \infty$ didn't work for practical small values $m$ and $t$.
+
+\begin{center} 
+\begin{tabular}{@{} *7c @{}}
+\toprule
+ $\delta$ & size of $N$ (bits) & size of $d$ (bits) & m & t & dim(L) & running time \\ 
+\midrule
+ 0.25 & 2048 & 512 & 3 & 1 & 11 & 0.5s\\ 
+ 0.26 & 2048 & 532 & 3 & 1 & 11 &  1.9s \\
+ 0.27 & 2048 & 553 & 6 & 2 & 33 & 2m 27s \\
+\bottomrule
+\end{tabular}
+\end{center} 
+
+\section{Summary}
+
+Boneh and Durfee were the last ones to improve the bound on the low private exponent problem. At the end of their paper they claimed that ``a bound of $d<N^{1-\frac{1}{\sqrt{2}}}$ cannot be the final answer. It is too unnatural'', emitting the idea of a more ``natural'' bound of $d < N^{\frac{1}{2}}$. It was more than 15 years ago.\\
+Coppersmith's ideas of attacking cryptosystems using the lattice reduction algorithm LLL (invented in 1982) seem to still have a lot of room for growing. But at the moment, they are all working in a relaxed version of the problems, which most of the time are far from the reality.\\
+Without even talking about Coppersmith, LLL seems to have a lot of applications in Cryptography and we should see it used more and more during the next years of research.
+
+
+\newpage
+\begin{thebibliography}{1}
+
+\bibitem{chrispeikert} Chris Peikert {\em Lattices in Cryptography, Georgia Tech, Fall 2013: Lecture 2, 3}
+\bibitem{coppersmith} Don Coppersmith {\em Finding Small Solutions to Small Degree Polynomials}
+\bibitem{howgrave-graham} Nicholas Howgrave-Graham {\em Finding Small Roots of Univariate Modular Equations Revisited}
+\bibitem{may} Alexander May {\em Using LLL-Reduction for Solving RSA and Factorization Problems}
+\bibitem{bonehdurfee} Boneh and Durfee {\em Cryptanalysis of RSA with Private Key d Less Than $N^{0.292}$}
+\bibitem{herrmannmay} Herrmann and May {\em Maximizing Small Root Bounds by Linearization and Applications to Small Secret Exponent RSA}
+
+
+\end{thebibliography}
+
+\end{document}
