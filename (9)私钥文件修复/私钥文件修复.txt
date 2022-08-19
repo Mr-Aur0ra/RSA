@@ -1,0 +1,5 @@
+使用fix.py将私钥进行修复，在终端中得到正常的私钥，
+将私钥复制到文件private.pem中
+当然最后还有一个坑，不像前几个RSA用的是PKCS padding，这个加密之后的文件用的是OAEP padding方式，要用
+openssl rsautl -decrypt -inkey private.pem -keyform PEM -in flag.enc -oaep
+指定OAEP填充方式，巨坑
