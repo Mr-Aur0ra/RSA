@@ -1,0 +1,101 @@
+模不互素 （gcd(N1,N2)!=1）
+适用情况：存在两个或更多模数 ，且gcd(N1,N2)!=1 。
+多个模数n共用质数，则可以很容易利用欧几里得算法求得他们的质因数之一gcd(N1,N2) ，然后这个最大公约数可用于分解模数分别得到对应的p和q，即可进行解密。
+
+
+2个模数:
+加密:
+c1 = pow(m1,e1,n1)
+c2 = pow(m2,e2,n2)
+
+解密:
+满足gcd(n1,n2)!=1 不互素 才可以
+
+p12 = p1 = p2 = gcd(n1,n2) 
+q1 = n1/p12
+q2 = n2/p12
+
+d1 = gmpy2.invert(e, (p12 - 1) * (q1 - 1))
+d2 = gmpy2.invert(e, (p12 - 1) * (q2 - 1))
+
+m1 = pow(c1, d1, n1)
+m2 = pow(c2, d2, n2)
+
+
+4个模数:
+加密:
+c1 = pow(m1,e1,n1)
+c2 = pow(m2,e2,n2)
+c3 = pow(m3,e3,n3)
+c4 = pow(m4,e4,n4)
+解密:
+满足任意两个都 不互素 才可以，然后就能求出每个n的四个因子。
+也就是n1,n2,n3,n4都不互素,即n1,n2,n3,n4公享质数
+因为gcd无法直接求n1,n2,n3,n4的共享质数，只能求2个数的共享质数，所以通过下面的方法分组求:
+
+n1p1 = gcd(n1,n2)                
+n1p2 = gcd(n1,n3)                       
+n1p3 = gcd(n1,n4)                         
+n1p4 = n1/(n1p1*n1p2*n1p3)                       
+phi1 = (n1p1-1)*(n1p2-1)*(n1p3-1)*(n1p4-1)
+                     
+
+n2p1 = gcd(n2,n1)
+n2p2 = gcd(n2,n3)
+n2p3 = gcd(n2,n4)
+n2p4 = n2/(n2p1*n2p2*n2p3)  
+phi2 = (n2p1-1)*(n2p2-1)*(n2p3-1)*(n2p4-1)
+
+
+n3p1 = gcd(n3,n1)                
+n3p2 = gcd(n3,n2)                      
+n3p3 = gcd(n3,n4)                        
+n3p4 = n3/(n3p1*n3p2*n3p3)                                            
+phi3 = (n3p1-1)*(n3p2-1)*(n3p3-1)*(n3p4-1)
+
+
+n4p1 = gcd(n4,n1)
+n4p2 = gcd(n4,n2) 
+n4p3 = gcd(n4,n3) 
+n4p4 = n4/(n4p1*n4p2*n4p3)  
+phi4 = (n4p1-1)*(n4p2-1)*(n4p3-1)*(n4p4-1)
+ 
+
+d1 = gmpy2.invert(e1,phi1)   
+d2 = gmpy2.invert(e2,phi2)
+d3 = gmpy2.invert(e3,phi3)
+d4 = gmpy2.invert(e4,phi4)
+
+m1 = pow(c1,d1,n1)
+m2 = pow(c2,d2,n2)
+m3 = pow(c3,d3,n3)
+m4 = pow(c4,d4,n4)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
