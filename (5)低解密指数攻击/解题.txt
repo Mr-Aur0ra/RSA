@@ -1,0 +1,3 @@
+首先需要下载rsa-wiener-attack(在这个目录里面的“rsa工具”文件夹里面有)
+git clone https://github.com/pablocelayes/rsa-wiener-attack
+然后把exp.py放入这个目录中运行即可
