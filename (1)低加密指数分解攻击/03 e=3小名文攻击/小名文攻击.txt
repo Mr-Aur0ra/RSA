@@ -1,0 +1,12 @@
+适用情况：e较小，一般为3。
+
+公钥e很小，明文m也不大的话，于是m^e=k*n+m 中的的k值很小甚至为0，爆破k或直接开三次方即可。
+
+
+原理示例:
+def small_msg(e, n, c):
+    print time.asctime(), "Let's waiting..."
+    for k in xrange(200000000):
+        if gmpy2.iroot(c + n * k, e)[1] == 1:
+            print time.asctime(), "...done!"
+            return gmpy2.iroot(c + n * k, 3)[0]
