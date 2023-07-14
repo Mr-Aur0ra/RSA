@@ -1,4 +1,4 @@
-## 日常比赛过程中遇到的RSA常见题目解题脚本
+## 日常比赛过程中遇到的RSA常见题目
 
 
 ## Stargazers over time
