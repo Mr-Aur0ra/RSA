@@ -15,6 +15,7 @@ n1 = int(lines[0])
 n2 = int(lines[4])
 
 p1=p2=gmpy2.gcd(n1,n2)
+assert p1 == p2 != 1
 q1=n1/p1
 q2=n2/p2
 
