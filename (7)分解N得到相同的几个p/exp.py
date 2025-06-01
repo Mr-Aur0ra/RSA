@@ -1,6 +1,5 @@
 #!/usr/bin/python
 #coding:utf-8
-#Author:醉清风
 
 import base64
 import gmpy2
