@@ -1,7 +1,6 @@
 #!/usr/bin/python
 #coding:utf-8
 
-
 import random
 from md5 import md5
 
