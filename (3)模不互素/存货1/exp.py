@@ -1,6 +1,5 @@
 #!/usr/bin/python
 #coding:utf-8
-#@Author:Mr.Aur0ra
 
 import gmpy2
 from Crypto.Util.number import long_to_bytes
